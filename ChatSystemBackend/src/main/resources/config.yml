@@ -1,0 +1,4 @@
+# The configuration file for the ChatSystemBackend plugin developed by JazhdoMC.
+
+# Disables the chat broadcasting to rely on using the event handlers to recieve global chat
+disable-chat-broadcast: false

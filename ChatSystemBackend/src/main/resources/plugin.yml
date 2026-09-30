@@ -1,0 +1,19 @@
+name: ChatSystemBackend
+version: 0.3.0
+description: A plugin developed by JazhdoMC for making global chat possible by using ChatSystemVelocity as a transfer point for all messages.
+author: Jazhdo
+main: mc.jazhdo.ChatSystemBackend
+prefix: ChatSystemBackend
+
+depend: [LuckPerms]
+
+permissions:
+  chat.edit:
+    description: Access to the command /chat for editing prefixes and chat-global/server toggle
+    default: true
+
+commands:
+  chat:
+    description: Opens up the menu for configuring prefixes and to switch between global and server chat
+    usage: /chat
+    permission: chat.edit

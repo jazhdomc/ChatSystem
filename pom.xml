@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>mc.jazhdo</groupId>
+    <artifactId>ChatSystem</artifactId>
+    <version>0.3.0</version>
+    <packaging>pom</packaging>
+
+    <name>ChatSystem</name>
+    <url>https://github.com/jazhdomc/ChatSystem</url>
+    <description>A plugin developed by JazhdoMC to have global chat management.</description>
+
+    <modules>
+        <module>ChatSystemBackend</module>
+        <module>ChatSystemVelocity</module>
+        <module>ChatSystemNewBackend</module>
+    </modules>
+
+    <properties>
+        <maven.compiler.release>25</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>net.luckperms</groupId>
+            <artifactId>api</artifactId>
+            <version>5.5</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+</project>
