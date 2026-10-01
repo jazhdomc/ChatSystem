@@ -277,7 +277,7 @@ public class ChatSystemNewBackend extends JavaPlugin implements Listener, Plugin
                     pluginManager.callEvent(new GlobalChatEvent(server, prefix, player, message));
                     if (!disableChatBroadcast) Bukkit.broadcastMessage(ChatColor.DARK_AQUA + "[" + server + "] " + prefix + ChatColor.WHITE + " <" + player + ">: " + message);
                 } else {
-                    String player = input.readUTF(), origin = input.readUTF(), destination = input.readUTF();
+                    String player = input.readUTF(), origin = input.readBoolean() ? input.readUTF() : null, destination = input.readBoolean() ? input.readUTF() : null;
                     pluginManager.callEvent(new ServerTransferEvent(player, origin, destination));
                     if (!disableChatBroadcast) {
                         if (destination == null) Bukkit.broadcastMessage(ChatColor.YELLOW + player + " has left the proxy from " + (origin == null ? "the login server" : origin) + ".");

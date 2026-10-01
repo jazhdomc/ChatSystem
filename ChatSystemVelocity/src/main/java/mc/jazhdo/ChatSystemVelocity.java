@@ -46,7 +46,7 @@ import net.luckperms.api.context.ContextManager;
 import net.luckperms.api.platform.PlayerAdapter;
 
 @SuppressWarnings("CallToPrintStackTrace")
-@Plugin(id = "chat-system-velocity", name = "ChatSystemVelocity", version = "0.2.0", dependencies = { @Dependency(id = "luckperms") })
+@Plugin(id = "chat-system-velocity", name = "ChatSystemVelocity", version = "0.3.1", dependencies = { @Dependency(id = "luckperms") })
 public class ChatSystemVelocity {
     private final ProxyServer proxy;
     private final MinecraftChannelIdentifier global, single, refresh, update, announcement;
@@ -144,6 +144,7 @@ public class ChatSystemVelocity {
         }
     }
 
+    // Server Transfer Listeners
     @Subscribe
     public void onPlayerJoin(ServerConnectedEvent event) {
         // Send join/transfer message to all players on the proxy
@@ -161,7 +162,6 @@ public class ChatSystemVelocity {
             });
         }
     }
-
     @Subscribe
     public void onPlayerLeave(DisconnectEvent event) {
         // Send leaving message to all players on the proxy
@@ -169,7 +169,6 @@ public class ChatSystemVelocity {
         Optional<ServerConnection> originServer = player.getCurrentServer();
         broadcastServerTransferOnGlobal(player.getUsername(), originServer.isPresent() ? originServer.get().getServerInfo().getName() : null, null);
     }
-
     private void broadcastServerTransferOnGlobal(@NotNull String playerName, String origin, String destination) {
         /** 
          * Build output bytes
@@ -183,8 +182,16 @@ public class ChatSystemVelocity {
         ByteArrayDataOutput output = ByteStreams.newDataOutput();
         output.writeByte((byte) 1);
         output.writeUTF(playerName);
-        output.writeUTF(origin);
-        output.writeUTF(destination);
+        if (origin == null) output.writeBoolean(false);
+        else {
+            output.writeBoolean(true);
+            output.writeUTF(origin);
+        }
+        if (destination == null) output.writeBoolean(false);
+        else {
+            output.writeBoolean(true);
+            output.writeUTF(destination);
+        }
         byte[] bytes = output.toByteArray();
 
         // Broadcast to all servers with players
@@ -289,11 +296,11 @@ public class ChatSystemVelocity {
         event.setResult(PluginMessageEvent.ForwardResult.handled());
     }
 
+    // Event system for custom broadcasts
     @Subscribe
     public void onBroadcastEvent(BroadcastEvent event) {
         announceMessage(event.getName(), event.getMsg());
     }
-
     @Subscribe
     public void onSendAsPlayer(SendAsPlayerEvent event) {
         sendOnGlobal(event.getServer(), event.getPrefix(), event.getPlayer(), event.getMsg());
@@ -330,16 +337,6 @@ public class ChatSystemVelocity {
         output.writeUTF(msg);
         byte[] bytes = output.toByteArray();
         for (RegisteredServer server : proxy.getAllServers()) if (!server.getPlayersConnected().isEmpty()) server.sendPluginMessage(global, bytes);
-    }
-
-    private void broadcastGlobal(String msg) {
-        // Create new data stream to send to each plugin
-        ByteArrayDataOutput data = ByteStreams.newDataOutput();
-        data.writeUTF(msg);
-
-        // Broadcast chat message globally
-        byte[] byteArray = data.toByteArray();
-        for (RegisteredServer server : proxy.getAllServers()) if (!server.getPlayersConnected().isEmpty()) server.sendPluginMessage(global, byteArray);
     }
 
     private void sendSingle(Player player, String msg) {
