@@ -2,3 +2,7 @@
 
 # Disables the chat broadcasting to rely on using the event handlers to recieve global chat
 disable-chat-broadcast: false
+
+
+# This is the server ID used in the server side compatability for the JourneyMap plugin (Using format [SERVER_ID]_[WORLD_UID])
+server-id: new-survival

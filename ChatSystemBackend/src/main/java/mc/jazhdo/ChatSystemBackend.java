@@ -1,6 +1,7 @@
 package mc.jazhdo;
 
-import java.util.ArrayList;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -12,15 +13,18 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.Server;
+import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
@@ -39,14 +43,17 @@ import com.google.common.io.ByteStreams;
 
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.model.user.User;
+import net.luckperms.api.node.NodeType;
+import net.luckperms.api.node.types.PrefixNode;
 
 public class ChatSystemBackend extends JavaPlugin implements Listener, PluginMessageListener {
-    private final String global = "chatsystem:global", single = "chatsystem:single", refresh = "chatsystem:refresh", update = "chatsystem:update", announcement = "chatsystem:announcement";
+    private final String global = "chatsystem:global", single = "chatsystem:single", refresh = "chatsystem:refresh", update = "chatsystem:update", announcement = "chatsystem:announcement", journeyMapWorldIdChannel = "worldinfo:world_id";
     private final Map<String, String> prefixMap = new HashMap<>();
     private boolean firstPlayer = true, disableChatBroadcast;
     private PluginManager pluginManager;
     private LuckPerms lp;
     private Logger log;
+    private String journeyMapServerName = null;
 
     private class Commands implements CommandExecutor {
         @Override
@@ -56,7 +63,7 @@ public class ChatSystemBackend extends JavaPlugin implements Listener, PluginMes
             if (sender instanceof Player player) {
                 // Calculate amount of rows to show
                 User user = lp.getPlayerAdapter(Player.class).getUser(player);
-                List<String> prefixes = new ArrayList<>(user.getCachedData().getMetaData().getPrefixes().values());
+                List<String> prefixes = user.getNodes(NodeType.PREFIX).stream().map(PrefixNode::getMetaValue).toList();
                 int requiredRows = (int) Math.ceil(prefixes.size() / 9.0);
                 if (requiredRows > 5) requiredRows = 6;
                 else requiredRows++;
@@ -128,6 +135,7 @@ public class ChatSystemBackend extends JavaPlugin implements Listener, PluginMes
         saveDefaultConfig();
         FileConfiguration config = getConfig();
         disableChatBroadcast = config.getBoolean("disable-chat-broadcast");
+        journeyMapServerName = config.getString("server-id");
 
         pluginManager = Bukkit.getPluginManager();
 
@@ -141,6 +149,8 @@ public class ChatSystemBackend extends JavaPlugin implements Listener, PluginMes
         messenger.registerOutgoingPluginChannel(this, refresh);
         messenger.registerIncomingPluginChannel(this, update, this);
         messenger.registerOutgoingPluginChannel(this, update);
+        messenger.registerIncomingPluginChannel(this, journeyMapWorldIdChannel, this);
+        messenger.registerOutgoingPluginChannel(this, journeyMapWorldIdChannel);
         server.getPluginManager().registerEvents(this, this);
         getCommand("chat").setExecutor(new Commands());
 
@@ -297,6 +307,31 @@ public class ChatSystemBackend extends JavaPlugin implements Listener, PluginMes
                 prefixMap.clear();
                 while (input.readBoolean()) prefixMap.put(input.readUTF(), input.readUTF());
             }
+            // JourneyMap world ID communication channel
+            case journeyMapWorldIdChannel -> sendJourneyMapWorldId(playerFrom);
         }
+    }
+
+    // JourneyMap world ID logic ported
+    private String getJourneyMapWorldID(World world) {
+        return journeyMapServerName + "_" + world.getUID();
+    }
+    private void sendJourneyMapWorldId(Player player) {
+        int BUFFER_SIZE_MINIMUM = 44;
+        byte VOXELMAP_MAGIC_NUMBER = 42;
+
+        byte[] data = getJourneyMapWorldID(player.getWorld()).getBytes(StandardCharsets.UTF_8);
+
+        ByteBuffer buffer = ByteBuffer.allocate(BUFFER_SIZE_MINIMUM + data.length);
+        buffer.put((byte) 0x00).put(VOXELMAP_MAGIC_NUMBER).put((byte) data.length).put(data);
+        player.sendPluginMessage(this, journeyMapWorldIdChannel, buffer.array());
+    }
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onJoin(PlayerJoinEvent event) {
+        sendJourneyMapWorldId(event.getPlayer());
+    }
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onWorldChange(PlayerChangedWorldEvent event) {
+        sendJourneyMapWorldId(event.getPlayer());
     }
 }

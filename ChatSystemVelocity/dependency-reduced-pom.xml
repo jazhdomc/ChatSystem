@@ -3,7 +3,7 @@
   <parent>
     <artifactId>ChatSystem</artifactId>
     <groupId>mc.jazhdo</groupId>
-    <version>0.3.1</version>
+    <version>0.3.2</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
   <artifactId>ChatSystemVelocity</artifactId>
@@ -38,7 +38,7 @@
             <path>
               <groupId>com.velocitypowered</groupId>
               <artifactId>velocity-api</artifactId>
-              <version>4.1.0-SNAPSHOT</version>
+              <version>4.3.0</version>
             </path>
           </annotationProcessorPaths>
         </configuration>
@@ -55,7 +55,7 @@
     <dependency>
       <groupId>com.velocitypowered</groupId>
       <artifactId>velocity-api</artifactId>
-      <version>4.1.0-SNAPSHOT</version>
+      <version>4.3.0</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
