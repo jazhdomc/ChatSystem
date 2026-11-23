@@ -33,8 +33,8 @@ import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
 import com.velocitypowered.api.event.connection.PluginMessageEvent.ForwardResult;
-import com.velocitypowered.api.event.player.PlayerChannelRegisterEvent;
 import com.velocitypowered.api.event.player.ServerConnectedEvent;
+import com.velocitypowered.api.event.player.ServerPostConnectEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.network.ProtocolVersion;
 import com.velocitypowered.api.plugin.Dependency;
@@ -410,7 +410,7 @@ public class ChatSystemVelocity {
 
     // JourneyMap world id stuff
     @Subscribe 
-    public void onPlayerChannelRegister(PlayerChannelRegisterEvent event) {
+    public void onServerPostConnect(ServerPostConnectEvent event) {
         Player player = event.getPlayer();
         logger.log(Level.INFO, "Player {0} sent PlayerChannelRegisterEvent. Protocol Version: {1}", new String[]{player.getUsername(), player.getProtocolVersion().toString()});
         proxy.getScheduler().buildTask(this, (task) -> {
