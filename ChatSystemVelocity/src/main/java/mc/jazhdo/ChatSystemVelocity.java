@@ -64,7 +64,9 @@ public class ChatSystemVelocity {
         update = MinecraftChannelIdentifier.from(UPDATE),
         announcement = MinecraftChannelIdentifier.from(ANNOUNCEMENT),
         jmLegacy = MinecraftChannelIdentifier.from("journeymap"),
-        jmModern = MinecraftChannelIdentifier.create("worldinfo", "world_id");
+        jmModern = MinecraftChannelIdentifier.create("worldinfo", "world_id"),
+        jmVersion = MinecraftChannelIdentifier.create("journeymap", "version"),
+        jmPerm = MinecraftChannelIdentifier.create("journeymap", "perm_req");
     private LuckPerms lp;
     private ContextManager cm;
     private static final Map<String, String> serverNames = new HashMap<>();
@@ -93,7 +95,7 @@ public class ChatSystemVelocity {
 
     @Subscribe
     public void onProxyInitialize(ProxyInitializeEvent event) {
-        proxy.getChannelRegistrar().register(global, single, refresh, update, jmLegacy, jmModern);
+        proxy.getChannelRegistrar().register(global, single, refresh, update, jmLegacy, jmModern, jmVersion, jmPerm);
         lp = LuckPermsProvider.get();
         cm = lp.getContextManager();
         playerAdapter = lp.getPlayerAdapter(Player.class);
@@ -304,6 +306,7 @@ public class ChatSystemVelocity {
                 } else logger.log(Level.WARNING, "Updating username \"{0}\"'s prefix to \"{1}\" was unsuccessful because the source of the request was a instance of ServerConnection.", new String[]{username, prefix});
             }
             default -> {
+                logger.log(Level.INFO, "Unknown plugin message came through on channel {0}.", new String[]{event.getIdentifier().getId()});
                 return;
             }
         }
