@@ -1,6 +1,8 @@
 package mc.jazhdo;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -28,6 +30,7 @@ import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
 import com.velocitypowered.api.event.player.ServerConnectedEvent;
+import com.velocitypowered.api.event.player.ServerPostConnectEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.plugin.Dependency;
 import com.velocitypowered.api.plugin.Plugin;
@@ -36,7 +39,6 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.ServerConnection;
 import com.velocitypowered.api.proxy.messages.ChannelMessageSource;
-import com.velocitypowered.api.proxy.messages.ChannelRegistrar;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 
@@ -46,33 +48,38 @@ import net.luckperms.api.context.ContextManager;
 import net.luckperms.api.platform.PlayerAdapter;
 
 @SuppressWarnings("CallToPrintStackTrace")
-@Plugin(id = "chat-system-velocity", name = "ChatSystemVelocity", version = "0.3.2", dependencies = { @Dependency(id = "luckperms") })
+@Plugin(id = "chat-system-velocity", name = "ChatSystemVelocity", version = "0.3.3", dependencies = { @Dependency(id = "luckperms") })
 public class ChatSystemVelocity {
     private final ProxyServer proxy;
-    private final String GLOBAL = "chatsystem:global", SINGLE = "chatsystem:single", REFRESH = "chatsystem:refresh", UPDATE = "chatsystem:update", ANNOUNCEMENT = "chatsystem:announcement";
-    private final MinecraftChannelIdentifier global, single, refresh, update, announcement;
+    private static final String GLOBAL = "chatsystem:global",
+        SINGLE = "chatsystem:single",
+        REFRESH = "chatsystem:refresh",
+        UPDATE = "chatsystem:update",
+        ANNOUNCEMENT = "chatsystem:announcement";
+    private static final MinecraftChannelIdentifier global = MinecraftChannelIdentifier.from(GLOBAL),
+        single = MinecraftChannelIdentifier.from(SINGLE),
+        refresh = MinecraftChannelIdentifier.from(REFRESH),
+        update = MinecraftChannelIdentifier.from(UPDATE),
+        announcement = MinecraftChannelIdentifier.from(ANNOUNCEMENT),
+        jmLegacy = MinecraftChannelIdentifier.from("journeymap"),
+        jmModern = MinecraftChannelIdentifier.create("worldinfo", "world_id");
     private LuckPerms lp;
     private ContextManager cm;
-    private final Map<String, String> serverNames = new HashMap<>();
+    private static final Map<String, String> serverNames = new HashMap<>();
     private PlayerAdapter<Player> playerAdapter;
     private final Path dataDirectory;
     private final Logger logger;
     /**
      * A queue for plugin messages that have to be sent
      */
-    private final List<QueueObject> pluginMsgQueue = new ArrayList<>();
+    private static final List<QueueObject> pluginMsgQueue = new ArrayList<>();
     private Connection conn = null;
-    private final List<String[]> parsedForbiddenPhrases = new ArrayList<>();
-    private final Set<String> forbiddenWords = Set.of("2g1c", "acrotomophilia", "anal", "anilingus", "anus", "apeshit", "arsehole", "ass", "asshole", "assmunch", "autoerotic", "babeland", "bangbros", "bareback", "barenaked", "bastard", "bastardo", "bastinado", "bbw", "bdsm", "beaner", "beaners", "bestiality", "bimbos", "birdlock", "bitch", "bitches", "blowjob", "blumpkin", "bollocks", "bondage", "boner", "boob", "boobs", "bukkake", "bulldyke", "bullshit", "bunghole", "busty", "butt", "buttcheeks", "butthole", "camgirl", "camslut", "camwhore", "carpetmuncher", "circlejerk", "clit", "clitoris", "clusterfuck", "cock", "cocks", "coprolagnia", "coprophilia", "cornhole", "coon", "coons", "creampie", "cum", "cumming", "cunnilingus", "cunt", "darkie", "daterape", "deepthroat", "dendrophilia", "dick", "dildo", "dingleberry", "dingleberries", "doggiestyle", "doggystyle", "dolcett", "domination", "dominatrix", "dommes", "dvda", "ecchi", "ejaculation", "erotic", "erotism", "escort", "eunuch", "faggot", "fecal", "felch", "fellatio", "feltch", "femdom", "figging", "fingerbang", "fingering", "fisting", "footjob", "frotting", "fuck", "fuckin", "fucking", "fucktards", "fudgepacker", "futanari", "genitals", "goatcx", "goatse", "gokkun", "goodpoop", "goregasm", "grope", "g-spot", "guro", "handjob", "hardcore", "hentai", "homoerotic", "honkey", "hooker", "humping", "incest", "intercourse", "jailbait", "jigaboo", "jiggaboo", "jiggerboo", "jizz", "juggs", "kike", "kinbaku", "kinkster", "kinky", "knobbing", "lolita", "lovemaking", "masturbate", "milf", "motherfucker", "muffdiving", "nambla", "nawashi", "negro", "neonazi", "nigga", "nigger", "nimphomania", "nipple", "nipples", "nude", "nudity", "nympho", "nymphomania", "octopussy", "omorashi", "orgasm", "orgy", "paedophile", "paki", "panties", "panty", "pedobear", "pedophile", "pegging", "penis", "pissing", "pisspig", "playboy", "ponyplay", "poof", "poon", "poontang", "punany", "poopchute", "porn", "porno", "pornography", "pthc", "pubes", "pussy", "queaf", "queef", "quim", "raghead", "rape", "raping", "rapist", "rectum", "rimjob", "rimming", "sadism", "santorum", "scat", "schlong", "scissoring", "semen", "sex", "sexo", "sexy", "shemale", "shibari", "shit", "shitblimp", "shitty", "shota", "shrimping", "skeet", "slanteye", "slut", "s&m", "smut", "snatch", "snowballing", "sodomize", "sodomy", "spic", "splooge", "spooge", "spunk", "strapon", "strappado", "suck", "sucks", "swastika", "swinger", "threesome", "throating", "tit", "tits", "titties", "titty", "topless", "tosser", "towelhead", "tranny", "tribadism", "tubgirl", "tushy", "twat", "twink", "twinkie", "undressing", "upskirt", "urophilia", "vagina", "vibrator", "vorarephilia", "voyeur", "vulva", "wank", "wetback", "yaoi", "yiffy", "zoophilia");
+    private static final List<String[]> parsedForbiddenPhrases = new ArrayList<>();
+    private static final Set<String> forbiddenWords = Set.of("2g1c", "acrotomophilia", "anal", "anilingus", "anus", "apeshit", "arsehole", "ass", "asshole", "assmunch", "autoerotic", "babeland", "bangbros", "bareback", "barenaked", "bastard", "bastardo", "bastinado", "bbw", "bdsm", "beaner", "beaners", "bestiality", "bimbos", "birdlock", "bitch", "bitches", "blowjob", "blumpkin", "bollocks", "bondage", "boner", "boob", "boobs", "bukkake", "bulldyke", "bullshit", "bunghole", "busty", "butt", "buttcheeks", "butthole", "camgirl", "camslut", "camwhore", "carpetmuncher", "circlejerk", "clit", "clitoris", "clusterfuck", "cock", "cocks", "coprolagnia", "coprophilia", "cornhole", "coon", "coons", "creampie", "cum", "cumming", "cunnilingus", "cunt", "darkie", "daterape", "deepthroat", "dendrophilia", "dick", "dildo", "dingleberry", "dingleberries", "doggiestyle", "doggystyle", "dolcett", "domination", "dominatrix", "dommes", "dvda", "ecchi", "ejaculation", "erotic", "erotism", "escort", "eunuch", "faggot", "fecal", "felch", "fellatio", "feltch", "femdom", "figging", "fingerbang", "fingering", "fisting", "footjob", "frotting", "fuck", "fuckin", "fucking", "fucktards", "fudgepacker", "futanari", "genitals", "goatcx", "goatse", "gokkun", "goodpoop", "goregasm", "grope", "g-spot", "guro", "handjob", "hardcore", "hentai", "homoerotic", "honkey", "hooker", "humping", "incest", "intercourse", "jailbait", "jigaboo", "jiggaboo", "jiggerboo", "jizz", "juggs", "kike", "kinbaku", "kinkster", "kinky", "knobbing", "lolita", "lovemaking", "masturbate", "milf", "motherfucker", "muffdiving", "nambla", "nawashi", "negro", "neonazi", "nigga", "nigger", "nimphomania", "nipple", "nipples", "nude", "nudity", "nympho", "nymphomania", "octopussy", "omorashi", "orgasm", "orgy", "paedophile", "paki", "panties", "panty", "pedobear", "pedophile", "pegging", "penis", "pissing", "pisspig", "playboy", "ponyplay", "poof", "poon", "poontang", "punany", "poopchute", "porn", "porno", "pornography", "pthc", "pubes", "pussy", "queaf", "queef", "quim", "raghead", "rape", "raping", "rapist", "rectum", "rimjob", "rimming", "sadism", "santorum", "scat", "schlong", "scissoring", "semen", "sex", "sexo", "sexy", "shemale", "shibari", "shit", "shitblimp", "shitty", "shota", "shrimping", "skeet", "slanteye", "slut", "s&m", "smut", "snatch", "snowballing", "sodomize", "sodomy", "spic", "splooge", "spooge", "spunk", "strapon", "strappado", "suck", "sucks", "swastika", "swinger", "threesome", "throating", "tit", "tits", "titties", "titty", "topless", "tosser", "towelhead", "tranny", "tribadism", "tubgirl", "tushy", "twat", "twink", "twinkie", "undressing", "upskirt", "urophilia", "vagina", "vibrator", "vorarephilia", "voyeur", "vulva", "wank", "wetback", "yaoi", "yiffy", "zoophilia");
 
     @Inject
     public ChatSystemVelocity(ProxyServer proxy, Logger logger, @DataDirectory Path dataDirectory) {
         this.proxy = proxy;
-        this.global = MinecraftChannelIdentifier.from(GLOBAL);
-        this.single = MinecraftChannelIdentifier.from(SINGLE);
-        this.refresh = MinecraftChannelIdentifier.from(REFRESH);
-        this.update = MinecraftChannelIdentifier.from(UPDATE);
-        this.announcement = MinecraftChannelIdentifier.from(ANNOUNCEMENT);
         this.logger = logger;
         this.dataDirectory = dataDirectory;
 
@@ -84,14 +91,13 @@ public class ChatSystemVelocity {
 
     @Subscribe
     public void onProxyInitialize(ProxyInitializeEvent event) {
-        ChannelRegistrar registrar = proxy.getChannelRegistrar();
-        registrar.register(global);
-        registrar.register(single);
-        registrar.register(refresh);
-        registrar.register(update);
+        proxy.getChannelRegistrar().register(global, single, refresh, update, jmLegacy, jmModern);
         lp = LuckPermsProvider.get();
         cm = lp.getContextManager();
         playerAdapter = lp.getPlayerAdapter(Player.class);
+
+        // HelperCommands
+        HelperCommands.init(proxy, proxy.getCommandManager(), logger);
 
         // Create plugin's folder if doesn't exist
         try {
@@ -382,5 +388,45 @@ public class ChatSystemVelocity {
             }
         }
         return false;
+    }
+
+    // JourneyMap world id stuff
+    @Subscribe 
+    public void onServerPostConnect(ServerPostConnectEvent event) {
+        Player player = event.getPlayer();
+        sendModernJMWorldId(player);
+        sendLegacyJMWorldId(player);
+    }
+    private static void sendLegacyJMWorldId(Player player) {
+        byte[] id = getWorldId(player), pid = "worldinfo:world_id".getBytes(StandardCharsets.UTF_8);
+        ByteArrayOutputStream o = new ByteArrayOutputStream();
+        o.write(1);
+        writeVarInt(o, pid.length);
+        o.write(pid, 0, pid.length);
+        o.write(0x00);
+        o.write(0x2A);
+        writeVarInt(o, id.length);
+        o.write(id, 0, id.length);
+        player.sendPluginMessage(jmLegacy, o.toByteArray());
+    }
+    public static boolean sendModernJMWorldId(Player player) {
+        byte[] id = getWorldId(player);
+        var out = new ByteArrayOutputStream(id.length + 6);
+        out.write(0x00);
+        out.write(0x2A);
+        writeVarInt(out, id.length);
+        out.writeBytes(id);
+        return player.sendPluginMessage(jmModern, out.toByteArray());
+    }
+    private static void writeVarInt(ByteArrayOutputStream o, int v) {
+        while ((v & ~0x7F) != 0) {
+            o.write((v & 0x7f) | 0x80);
+            v >>>= 7;
+        }
+        o.write(v);
+    }
+    private static byte[] getWorldId(Player player) {
+        Optional<ServerConnection> conn = player.getCurrentServer();
+        return conn.isPresent() ? conn.get().getServerInfo().getName().getBytes(StandardCharsets.UTF_8) : new byte[0];
     }
 }
