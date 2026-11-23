@@ -13,6 +13,8 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Base64.Encoder;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -74,6 +76,7 @@ public class ChatSystemVelocity {
     private PlayerAdapter<Player> playerAdapter;
     private final Path dataDirectory;
     private final Logger logger;
+    private static final Encoder base64Encoder = Base64.getEncoder();
     /**
      * A queue for plugin messages that have to be sent
      */
@@ -303,7 +306,7 @@ public class ChatSystemVelocity {
                         for (RegisteredServer server : servers) pluginMsgQueue.add(new QueueObject(server, outputBytes, update));
                     }
                     default -> {
-                        logger.log(Level.INFO, "Unknown plugin message came through on channel {0} from {1} through a server.", new String[]{event.getIdentifier().getId(), connection.getPlayer().getUsername()});
+                        logUnknownPluginMessage(true, event, connection.getPlayer().getUsername());
                         event.setResult(ForwardResult.forward());
                         return;
                     }
@@ -311,10 +314,18 @@ public class ChatSystemVelocity {
                 
                 // Prevent packet bouncing
                 event.setResult(ForwardResult.handled());
+                return;
             }
-            case Player player -> logger.log(Level.INFO, "Unknown plugin message came through on channel {0} from {1} through their client.", new String[]{event.getIdentifier().getId(), player.getUsername()});
-            default -> logger.log(Level.INFO, "Unknown plugin message came through on channel {0} from a unknown source.", event.getIdentifier().getId());
+            case Player player -> logUnknownPluginMessage(false, event, player.getUsername());
+            default -> logUnknownPluginMessage(null, event, null);
         }
+        event.setResult(ForwardResult.forward());
+    }
+    private void logUnknownPluginMessage(Boolean type, PluginMessageEvent event, String username) {
+        logger.log(Level.INFO,
+            "Unknown plugin message came through on channel {0} with data {1} from {2}{3}.",
+            new String[]{event.getIdentifier().getId(), base64Encoder.encodeToString(event.getData()), type == null ? "a unknown source" : username, type == null ? "" : (" through " + (type ? "a server" : "their client"))}
+        );
     }
 
     // Event system for custom broadcasts
