@@ -11,7 +11,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,8 +31,8 @@ import com.google.inject.Inject;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
+import com.velocitypowered.api.event.player.PlayerChannelRegisterEvent;
 import com.velocitypowered.api.event.player.ServerConnectedEvent;
-import com.velocitypowered.api.event.player.ServerPostConnectEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.plugin.Dependency;
 import com.velocitypowered.api.plugin.Plugin;
@@ -392,10 +394,15 @@ public class ChatSystemVelocity {
 
     // JourneyMap world id stuff
     @Subscribe 
-    public void onServerPostConnect(ServerPostConnectEvent event) {
+    public void onPlayerChannelRegister(PlayerChannelRegisterEvent event) {
         Player player = event.getPlayer();
-        sendModernJMWorldId(player);
-        sendLegacyJMWorldId(player);
+        proxy.getScheduler().buildTask(this, (task) -> {
+            if (!Arrays.equals(getWorldId(player), new byte[0])) {
+                sendModernJMWorldId(player);
+                sendLegacyJMWorldId(player);
+                task.cancel();
+            }
+        }).delay(Duration.ofMillis(500)).repeat(Duration.ofMillis(500)).schedule();
     }
     private static void sendLegacyJMWorldId(Player player) {
         byte[] id = getWorldId(player), pid = "worldinfo:world_id".getBytes(StandardCharsets.UTF_8);
