@@ -13,7 +13,6 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,16 +30,18 @@ import com.google.inject.Inject;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
+import com.velocitypowered.api.event.connection.PluginMessageEvent.ForwardResult;
 import com.velocitypowered.api.event.player.PlayerChannelRegisterEvent;
 import com.velocitypowered.api.event.player.ServerConnectedEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
+import com.velocitypowered.api.network.ProtocolVersion;
 import com.velocitypowered.api.plugin.Dependency;
 import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.ServerConnection;
-import com.velocitypowered.api.proxy.messages.ChannelMessageSource;
+import com.velocitypowered.api.proxy.messages.LegacyChannelIdentifier;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 
@@ -49,7 +50,7 @@ import net.luckperms.api.LuckPermsProvider;
 import net.luckperms.api.context.ContextManager;
 import net.luckperms.api.platform.PlayerAdapter;
 
-@SuppressWarnings("CallToPrintStackTrace")
+@SuppressWarnings(value = {"CallToPrintStackTrace", "NonConstantLogger"})
 @Plugin(id = "chat-system-velocity", name = "ChatSystemVelocity", version = "0.3.3", dependencies = { @Dependency(id = "luckperms") })
 public class ChatSystemVelocity {
     private final ProxyServer proxy;
@@ -63,10 +64,10 @@ public class ChatSystemVelocity {
         refresh = MinecraftChannelIdentifier.from(REFRESH),
         update = MinecraftChannelIdentifier.from(UPDATE),
         announcement = MinecraftChannelIdentifier.from(ANNOUNCEMENT),
-        jmLegacy = MinecraftChannelIdentifier.from("journeymap"),
         jmModern = MinecraftChannelIdentifier.create("worldinfo", "world_id"),
         jmVersion = MinecraftChannelIdentifier.create("journeymap", "version"),
         jmPerm = MinecraftChannelIdentifier.create("journeymap", "perm_req");
+    private static final LegacyChannelIdentifier jmLegacy = new LegacyChannelIdentifier("journeymap");
     private LuckPerms lp;
     private ContextManager cm;
     private static final Map<String, String> serverNames = new HashMap<>();
@@ -212,107 +213,108 @@ public class ChatSystemVelocity {
     @Subscribe
     public void onPluginMessage(PluginMessageEvent event) {
         // Only continue if its the right plugin messaging channel
-        switch (event.getIdentifier().getId()) {
-            case GLOBAL -> {
-                // Get and extract the data
-                ByteArrayDataInput dataStream = event.dataAsDataStream();
-                String playerName, msg;
-                try {
-                    playerName = dataStream.readUTF();
-                    msg = dataStream.readUTF();
-                } catch (IllegalStateException e) {
-                    logger.log(Level.WARNING, "Data stream returned a Illegal State Exception: {0}", e.getMessage());
-                    return;
-                }
-
-                // Get the player to format it with their prefix
-                proxy.getPlayer(playerName).ifPresentOrElse(p -> {
-                    // Do profanity check early to avoid unnecessary prefix queries
-                    if (!hasProfanity(p, msg)) {
-                        ChannelMessageSource source = event.getSource();
-                        if (source instanceof ServerConnection connection) {
-                            // Get better formatted server name
-                            String serverName = connection.getServerInfo().getName();
-                            if (serverNames.containsKey(serverName)) serverName = serverNames.get(serverName);
-                            else {
-                                String tempServerName = capitalize(serverName.replaceAll("-", " "));
-                                serverNames.put(serverName, tempServerName);
-                                serverName = tempServerName;
+        switch (event.getSource()) {
+            case ServerConnection connection -> {
+                switch (event.getIdentifier().getId()) {
+                    case GLOBAL -> {
+                        // Get and extract the data
+                        ByteArrayDataInput dataStream = event.dataAsDataStream();
+                        String playerName, msg;
+                        try {
+                            playerName = dataStream.readUTF();
+                            msg = dataStream.readUTF();
+                        } catch (IllegalStateException e) {
+                            logger.log(Level.WARNING, "Data stream returned a Illegal State Exception: {0}", e.getMessage());
+                            return;
+                        }
+                        
+                        // Get the player to format it with their prefix
+                        proxy.getPlayer(playerName).ifPresentOrElse(p -> {
+                            // Do profanity check early to avoid unnecessary prefix queries
+                            if (!hasProfanity(p, msg)) {
+                                // Get better formatted server name
+                                String serverName = connection.getServerInfo().getName();
+                                if (serverNames.containsKey(serverName)) serverName = serverNames.get(serverName);
+                                else {
+                                    String tempServerName = capitalize(serverName.replaceAll("-", " "));
+                                    serverNames.put(serverName, tempServerName);
+                                    serverName = tempServerName;
+                                }
+                                
+                                // Get prefix
+                                try (PreparedStatement ps = conn.prepareStatement("SELECT * FROM prefixes WHERE username = ?")) {
+                                    ps.setString(1, playerName.toLowerCase());
+                                    ResultSet result = ps.executeQuery();
+                                    sendOnGlobal(serverName, result.next() ? result.getString("prefix") : playerAdapter.getUser(p).getCachedData().getMetaData(cm.getQueryOptions(p)).getPrefix(), playerName, msg);
+                                } catch (SQLException e) {
+                                    e.printStackTrace();
+                                    logger.log(Level.WARNING, "There was an error finding the prefix for username \"{0}\". Error message: {1}", new String[]{playerName.toLowerCase(), e.getMessage()});
+                                }
                             }
-
-                            // Get prefix
-                            try (PreparedStatement ps = conn.prepareStatement("SELECT * FROM prefixes WHERE username = ?")) {
-                                ps.setString(1, playerName.toLowerCase());
-                                ResultSet result = ps.executeQuery();
-                                sendOnGlobal(serverName, result.next() ? result.getString("prefix") : playerAdapter.getUser(p).getCachedData().getMetaData(cm.getQueryOptions(p)).getPrefix(), playerName, msg);
-                            } catch (SQLException e) {
-                                e.printStackTrace();
-                                logger.log(Level.WARNING, "There was an error finding the prefix for username \"{0}\". Error message: {1}", new String[]{playerName.toLowerCase(), e.getMessage()});
+                        }, () -> logger.log(Level.WARNING, "Player {0} could not be found by the proxy. Message \"{1}\" will not be sent to global chat.", new String[]{playerName, msg}));
+                    }
+                    case REFRESH -> {
+                        // Send all the prefixes
+                        try (PreparedStatement ps = conn.prepareStatement("SELECT username, prefix FROM prefixes")) {
+                            ResultSet resultList = ps.executeQuery();
+                            ByteArrayDataOutput output = ByteStreams.newDataOutput();
+                            while (resultList.next()) {
+                                output.writeBoolean(true);
+                                output.writeUTF(resultList.getString("username"));
+                                output.writeUTF(resultList.getString("prefix"));
                             }
-                        } else logger.log(Level.WARNING, "PluginMessageEvent source {0} was not a ServerConnection.", source.toString());
+                            output.writeBoolean(false);
+                            pluginMsgQueue.add(new QueueObject(connection.getServer(), output.toByteArray(), refresh));
+                        } catch (SQLException e) {
+                            e.printStackTrace();
+                            logger.log(Level.SEVERE, "There was an error querying the prefixes to send to all the backend servers. Error message: {0}", e.getMessage());
+                        }
                     }
-                }, () -> logger.log(Level.WARNING, "Player {0} could not be found by the proxy. Message \"{1}\" will not be sent to global chat.", new String[]{playerName, msg}));
-            }
-            case REFRESH -> {
-                // Send all the prefixes
-                try (PreparedStatement ps = conn.prepareStatement("SELECT username, prefix FROM prefixes")) {
-                    ResultSet resultList = ps.executeQuery();
-                    ByteArrayDataOutput output = ByteStreams.newDataOutput();
-                    while (resultList.next()) {
-                        output.writeBoolean(true);
-                        output.writeUTF(resultList.getString("username"));
-                        output.writeUTF(resultList.getString("prefix"));
+                    case UPDATE -> {
+                        // Get username and prefix to set
+                        ByteArrayDataInput input = event.dataAsDataStream();
+                        String username, prefix;
+                        try {
+                            username = input.readUTF();
+                            prefix = input.readUTF();
+                        } catch (IllegalStateException e) {
+                            logger.log(Level.WARNING, "Data stream returned a Illegal State Exception: {0}", e.getMessage());
+                            return;
+                        }
+                        
+                        // Set new username and prefix
+                        try (PreparedStatement ps = conn.prepareStatement("INSERT OR REPLACE INTO prefixes (username, prefix) VALUES (?, ?)")) {
+                            ps.setString(1, username);
+                            ps.setString(2, prefix);
+                            ps.executeUpdate();
+                        } catch (SQLException e) {
+                            e.printStackTrace();
+                            logger.log(Level.SEVERE, "There was an error setting the new prefix \"{0}\" for username \"{1}\". Error message: {2}", new String[]{username, prefix, e.getMessage()});
+                            return;
+                        }
+                        
+                        // Report the update to all other servers
+                        ByteArrayDataOutput output = ByteStreams.newDataOutput();
+                        output.writeUTF(username);
+                        output.writeUTF(prefix);
+                        byte[] outputBytes = output.toByteArray();
+                        List<RegisteredServer> servers = new ArrayList<>(proxy.getAllServers());
+                        servers.remove(connection.getServer());
+                        for (RegisteredServer server : servers) pluginMsgQueue.add(new QueueObject(server, outputBytes, update));
                     }
-                    output.writeBoolean(false);
-                    if (event.getSource() instanceof ServerConnection serverConnection) pluginMsgQueue.add(new QueueObject(serverConnection.getServer(), output.toByteArray(), refresh));
-                    else logger.log(Level.WARNING, "A event source is not a ServerConnection from which a refresh request was sent.");
-                } catch (SQLException e) {
-                    e.printStackTrace();
-                    logger.log(Level.SEVERE, "There was an error querying the prefixes to send to all the backend servers. Error message: {0}", e.getMessage());
+                    default -> {
+                        logger.log(Level.INFO, "Unknown plugin message came through on channel {0} from {1} through a server.", new String[]{event.getIdentifier().getId(), connection.getPlayer().getUsername()});
+                        event.setResult(ForwardResult.forward());
+                        return;
+                    }
                 }
+                
+                // Prevent packet bouncing
+                event.setResult(ForwardResult.handled());
             }
-            case UPDATE -> {
-                // Get username and prefix to set
-                ByteArrayDataInput input = event.dataAsDataStream();
-                String username, prefix;
-                try {
-                    username = input.readUTF();
-                    prefix = input.readUTF();
-                } catch (IllegalStateException e) {
-                    logger.log(Level.WARNING, "Data stream returned a Illegal State Exception: {0}", e.getMessage());
-                    return;
-                }
-
-                // Set new username and prefix
-                try (PreparedStatement ps = conn.prepareStatement("INSERT OR REPLACE INTO prefixes (username, prefix) VALUES (?, ?)")) {
-                    ps.setString(1, username);
-                    ps.setString(2, prefix);
-                    ps.executeUpdate();
-                } catch (SQLException e) {
-                    e.printStackTrace();
-                    logger.log(Level.SEVERE, "There was an error setting the new prefix \"{0}\" for username \"{1}\". Error message: {2}", new String[]{username, prefix, e.getMessage()});
-                    return;
-                }
-
-                // Report the update to all other servers
-                if (event.getSource() instanceof ServerConnection serverConnection) {
-                    ByteArrayDataOutput output = ByteStreams.newDataOutput();
-                    output.writeUTF(username);
-                    output.writeUTF(prefix);
-                    byte[] outputBytes = output.toByteArray();
-                    List<RegisteredServer> servers = new ArrayList<>(proxy.getAllServers());
-                    servers.remove(serverConnection.getServer());
-                    for (RegisteredServer server : servers) pluginMsgQueue.add(new QueueObject(server, outputBytes, update));
-                } else logger.log(Level.WARNING, "Updating username \"{0}\"'s prefix to \"{1}\" was unsuccessful because the source of the request was a instance of ServerConnection.", new String[]{username, prefix});
-            }
-            default -> {
-                logger.log(Level.INFO, "Unknown plugin message came through on channel {0}.", new String[]{event.getIdentifier().getId()});
-                return;
-            }
+            case Player player -> logger.log(Level.INFO, "Unknown plugin message came through on channel {0} from {1} through their client.", new String[]{event.getIdentifier().getId(), player.getUsername()});
+            default -> logger.log(Level.INFO, "Unknown plugin message came through on channel {0} from a unknown source.", event.getIdentifier().getId());
         }
-
-        // Prevent packet bouncing
-        event.setResult(PluginMessageEvent.ForwardResult.handled());
     }
 
     // Event system for custom broadcasts
@@ -343,7 +345,7 @@ public class ChatSystemVelocity {
         output.writeUTF(announcement);
 
         byte[] bytes = output.toByteArray();
-        for (RegisteredServer server : proxy.getAllServers()) if (!server.getPlayersConnected().isEmpty()) server.sendPluginMessage(this.announcement, bytes);
+        for (RegisteredServer server : proxy.getAllServers()) if (!server.getPlayersConnected().isEmpty()) server.sendPluginMessage(ChatSystemVelocity.announcement, bytes);
     }
 
     private void sendOnGlobal(String serverName, String prefix, String playerName, String msg) {
@@ -399,10 +401,11 @@ public class ChatSystemVelocity {
     @Subscribe 
     public void onPlayerChannelRegister(PlayerChannelRegisterEvent event) {
         Player player = event.getPlayer();
+        logger.log(Level.INFO, "Player {0} sent PlayerChannelRegisterEvent. Protocol Version: {1}", new String[]{player.getUsername(), player.getProtocolVersion().toString()});
         proxy.getScheduler().buildTask(this, (task) -> {
-            if (!Arrays.equals(getWorldId(player), new byte[0])) {
-                sendModernJMWorldId(player);
-                sendLegacyJMWorldId(player);
+            if (player.getCurrentServer().isPresent()) {
+                if (player.getProtocolVersion().lessThan(ProtocolVersion.MINECRAFT_1_13)) sendLegacyJMWorldId(player);
+                else sendModernJMWorldId(player);
                 task.cancel();
             }
         }).delay(Duration.ofMillis(500)).repeat(Duration.ofMillis(500)).schedule();
